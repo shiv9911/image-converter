@@ -37,8 +37,22 @@ def safe_remove(filepath):
 import subprocess
 
 def convert_avif_to_jpg(input_path, output_path):
-    # Try using ffmpeg from C:\ffmpeg\bin
-    ffmpeg_path = r'C:\ffmpeg\bin\ffmpeg.exe'
+    # Determine ffmpeg path based on environment
+    if os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ffmpeg', 'bin', 'ffmpeg.exe')):
+        # Local project ffmpeg folder
+        ffmpeg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ffmpeg', 'bin', 'ffmpeg.exe')
+    elif os.path.exists('/usr/bin/ffmpeg'):
+        # Linux/Render.com system ffmpeg
+        ffmpeg_path = 'ffmpeg'
+    elif os.path.exists('C:\\ffmpeg\\bin\\ffmpeg.exe'):
+        # Windows system ffmpeg
+        ffmpeg_path = r'C:\ffmpeg\bin\ffmpeg.exe'
+    else:
+        # Fallback to just 'ffmpeg' and hope it's in PATH
+        ffmpeg_path = 'ffmpeg'
+    
+    print(f"Using ffmpeg path: {ffmpeg_path}")
+    
     try:
         result = subprocess.run([
             ffmpeg_path, '-y', '-i', input_path, output_path

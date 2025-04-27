@@ -19,6 +19,12 @@ uploads/*
 site-packages/
 site-packages.zip
 
+# Include ffmpeg folder but exclude large files
+!ffmpeg/
+ffmpeg/**/*.dll
+ffmpeg/**/*.exe
+!ffmpeg/bin/ffmpeg.exe
+
 # OS specific
 .DS_Store
 Thumbs.db
