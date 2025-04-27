@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Project specific
+*.whl
+uploads/*
+!uploads/.gitkeep
+site-packages/
+site-packages.zip
+
+# OS specific
+.DS_Store
+Thumbs.db
