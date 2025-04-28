@@ -37,39 +37,103 @@ def safe_remove(filepath):
 import subprocess
 
 def convert_avif_to_jpg(input_path, output_path):
+    # Check if we're on Render.com (they set this environment variable)
+    is_render = os.environ.get('RENDER', '') == 'true'
+    
     # Determine ffmpeg path based on environment
-    if os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ffmpeg', 'bin', 'ffmpeg.exe')):
-        # Local project ffmpeg folder
-        ffmpeg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ffmpeg', 'bin', 'ffmpeg.exe')
-    elif os.path.exists('/usr/bin/ffmpeg'):
-        # Linux/Render.com system ffmpeg
-        ffmpeg_path = 'ffmpeg'
-    elif os.path.exists('C:\\ffmpeg\\bin\\ffmpeg.exe'):
+    possible_paths = [
+        # Project-local ffmpeg (Windows)
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ffmpeg', 'bin', 'ffmpeg.exe'),
+        # Standard Linux locations (Render.com)
+        '/usr/bin/ffmpeg',
+        '/usr/local/bin/ffmpeg',
         # Windows system ffmpeg
-        ffmpeg_path = r'C:\ffmpeg\bin\ffmpeg.exe'
-    else:
-        # Fallback to just 'ffmpeg' and hope it's in PATH
+        r'C:\ffmpeg\bin\ffmpeg.exe',
+        # Just the command name (rely on PATH)
+        'ffmpeg'
+    ]
+    
+    # Find the first path that exists
+    ffmpeg_path = None
+    for path in possible_paths:
+        # On Render.com, we'll just use 'ffmpeg' directly
+        if is_render:
+            ffmpeg_path = 'ffmpeg'
+            break
+        # Otherwise check if the path exists
+        if os.path.exists(path):
+            ffmpeg_path = path
+            break
+    
+    # If no path was found, default to 'ffmpeg'
+    if not ffmpeg_path:
         ffmpeg_path = 'ffmpeg'
     
     print(f"[DEBUG] AVIF Conversion - Using ffmpeg path: {ffmpeg_path}")
     print(f"[DEBUG] AVIF Conversion - Input path: {input_path}")
     print(f"[DEBUG] AVIF Conversion - Output path: {output_path}")
+    print(f"[DEBUG] AVIF Conversion - Running on Render.com: {is_render}")
     
-    # First try: Use ffmpeg directly
+    # Check if input file exists and has content
+    if not os.path.exists(input_path):
+        print(f"[DEBUG] AVIF Conversion - ERROR: Input file does not exist: {input_path}")
+        return False
+    
+    file_size = os.path.getsize(input_path)
+    print(f"[DEBUG] AVIF Conversion - Input file size: {file_size} bytes")
+    if file_size == 0:
+        print(f"[DEBUG] AVIF Conversion - ERROR: Input file is empty")
+        return False
+    
+    # First try: Use ffmpeg directly with full command logging
     try:
         print(f"[DEBUG] AVIF Conversion - Running ffmpeg command")
-        result = subprocess.run([
-            ffmpeg_path, '-y', '-i', input_path, output_path
-        ], capture_output=True, text=True)
+        
+        # Build the command
+        cmd = [ffmpeg_path, '-y', '-i', input_path, output_path]
+        print(f"[DEBUG] AVIF Conversion - Command: {' '.join(cmd)}")
+        
+        # Run the command with full output capture
+        result = subprocess.run(
+            cmd, 
+            capture_output=True, 
+            text=True)
         if result.returncode == 0:
             print(f"[DEBUG] AVIF Conversion - ffmpeg successful")
-            return True
+            
+            # Verify the output file was created and has content
+            if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                print(f"[DEBUG] AVIF Conversion - Output file created successfully: {os.path.getsize(output_path)} bytes")
+                return True
+            else:
+                print(f"[DEBUG] AVIF Conversion - ffmpeg did not create a valid output file")
         else:
-            print(f"[DEBUG] AVIF Conversion - ffmpeg error: {result.stderr}")
+            print(f"[DEBUG] AVIF Conversion - ffmpeg error code: {result.returncode}")
+            print(f"[DEBUG] AVIF Conversion - ffmpeg stderr: {result.stderr}")
+            print(f"[DEBUG] AVIF Conversion - ffmpeg stdout: {result.stdout}")
     except Exception as e:
         print(f"[DEBUG] AVIF Conversion - ffmpeg exception: {e}")
     
-    # Second try: Use Pillow with AVIF plugin
+    # Second try: Try ffmpeg with different arguments (sometimes helps on Linux)
+    try:
+        print(f"[DEBUG] AVIF Conversion - Trying alternative ffmpeg command")
+        
+        # Different command format that sometimes works better on Linux
+        alt_cmd = [ffmpeg_path, '-y', '-i', input_path, '-pix_fmt', 'yuv420p', output_path]
+        print(f"[DEBUG] AVIF Conversion - Alternative command: {' '.join(alt_cmd)}")
+        
+        alt_result = subprocess.run(alt_cmd, capture_output=True, text=True)
+        
+        if alt_result.returncode == 0:
+            print(f"[DEBUG] AVIF Conversion - Alternative ffmpeg successful")
+            if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                return True
+        else:
+            print(f"[DEBUG] AVIF Conversion - Alternative ffmpeg error: {alt_result.stderr}")
+    except Exception as e:
+        print(f"[DEBUG] AVIF Conversion - Alternative ffmpeg exception: {e}")
+    
+    # Third try: Use Pillow with AVIF plugin
     try:
         print(f"[DEBUG] AVIF Conversion - Trying Pillow with AVIF plugin")
         from PIL import Image
