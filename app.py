@@ -218,6 +218,9 @@ def convert():
     # Create a temporary zip file with date and time
     zip_filename = f'converted_{timestamp}.zip'
     zip_path = os.path.join(app.config['UPLOAD_FOLDER'], zip_filename)
+    
+    # Track folder structure for uploaded files
+    folder_structure = {}
 
     try:
         with zipfile.ZipFile(zip_path, 'w') as zipf:
@@ -227,30 +230,53 @@ def convert():
                     if conversion_type == 'pngToJpg' and not file.filename.lower().endswith('.png'):
                         continue
                     
-                    # Generate unique filenames
-                    base_filename, ext = os.path.splitext(secure_filename(file.filename))
+                    # Extract folder structure and filename
+                    original_path = file.filename
+                    # Replace backslashes with forward slashes for consistency
+                    original_path = original_path.replace('\\', '/')
+                    
+                    # Get the directory path and filename
+                    dir_path = os.path.dirname(original_path)
+                    just_filename = os.path.basename(original_path)
+                    
+                    # Generate unique filenames for processing
+                    base_filename, ext = os.path.splitext(secure_filename(just_filename))
                     ext = ext.lower()
                     input_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{base_filename}_{timestamp}_input{ext}")
                     output_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{base_filename}_{timestamp}_output.jpg")
+                    
+                    # Determine the ZIP path (preserving folder structure)
+                    if sort_folders:
+                        # Main/Additional sorting takes precedence if enabled
+                        if '-' in base_filename and base_filename.split('-')[-1].isdigit():
+                            zip_subfolder = 'Additional/'
+                        else:
+                            zip_subfolder = 'Main/'
+                            
+                        # If there was an original folder path, append it after Main/Additional
+                        if dir_path:
+                            zip_path_in_archive = os.path.join(zip_subfolder, dir_path)
+                        else:
+                            zip_path_in_archive = zip_subfolder
+                    else:
+                        # Just use the original folder structure
+                        zip_path_in_archive = dir_path
+                    
+                    # Ensure the path ends with a slash if not empty
+                    if zip_path_in_archive and not zip_path_in_archive.endswith('/'):
+                        zip_path_in_archive += '/'
+                        
+                    print(f"[DEBUG] File: {file.filename}, zip_path: {zip_path_in_archive}")
                     
                     try:
                         # Save the uploaded file
                         file.save(input_path)
                         
-                        # Decide subfolder if sorting enabled
-                        zip_subfolder = ''
-                        if sort_folders:
-                            # Main: 122902699540481.jpg (no dash before extension)
-                            # Additional: 122902699540481-1.jpg, 122902699540481-2.jpg
-                            if '-' in base_filename and base_filename.split('-')[-1].isdigit():
-                                zip_subfolder = 'Additional/'
-                            else:
-                                zip_subfolder = 'Main/'
-                        print(f"[DEBUG] File: {file.filename}, zip_subfolder: {zip_subfolder}")
                         if ext == '.jpg':
                             # If already JPG, add as-is with original name
-                            print(f"[DEBUG] Adding to ZIP: {zip_subfolder + file.filename}")
-                            zipf.write(input_path, zip_subfolder + file.filename)
+                            output_filename = just_filename
+                            print(f"[DEBUG] Adding to ZIP: {zip_path_in_archive + output_filename}")
+                            zipf.write(input_path, zip_path_in_archive + output_filename)
                         else:
                             # Convert to JPG
                             converted = False
@@ -274,10 +300,12 @@ def convert():
                                 except Exception as e:
                                     print(f"Error converting {file.filename}: {e}")
                                     continue  # Skip this file if conversion fails
-                            # Add converted file as base_filename.jpg
+                                    
+                            # Add converted file with .jpg extension
                             if converted:
-                                print(f"[DEBUG] Adding to ZIP: {zip_subfolder + f'{base_filename}.jpg'}")
-                                zipf.write(output_path, zip_subfolder + f"{base_filename}.jpg")
+                                output_filename = f"{base_filename}.jpg"
+                                print(f"[DEBUG] Adding to ZIP: {zip_path_in_archive + output_filename}")
+                                zipf.write(output_path, zip_path_in_archive + output_filename)
                         
                     finally:
                         # Clean up individual files

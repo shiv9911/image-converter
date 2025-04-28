@@ -197,8 +197,8 @@
             </div>
             
             <div class="drop-zone" id="dropZone">
-                <p>Drag and drop files here or click to select files</p>
-                <input type="file" name="files[]" id="fileInput" multiple accept=".webp,.avif,.png,.gif,.tiff,.psd,.svg,.heic,.jpeg,.jpg" style="display: none;">
+                <p>Drag & drop files or folders here or click to select</p>
+                <input type="file" id="fileInput" name="files[]" multiple accept=".webp,.avif,.png,.gif,.tiff,.psd,.svg,.heic,.jpg,.jpeg" webkitdirectory directory style="display: none;">
             </div>
             <div id="fileList"></div>
             <div class="error-message" id="errorMessage"></div>
@@ -216,6 +216,9 @@
     </div>
 
     <script>
+        // Define allowed extensions to match backend
+        const ALLOWED_EXTENSIONS = ['.webp', '.avif', '.png', '.gif', '.tiff', '.psd', '.svg', '.heic', '.jpeg', '.jpg'];
+        
         const dropZone = document.getElementById('dropZone');
         const fileInput = document.getElementById('fileInput');
         const fileList = document.getElementById('fileList');
@@ -252,45 +255,65 @@
         });
 
         function handleFiles(files) {
+            if (!files.length) return;
+            
+            // Check if we're in PNG only mode
+            const pngOnlyMode = document.getElementById('pngToJpg').checked;
+            
+            // Process each file
             Array.from(files).forEach(file => {
-                // Check if file is already in the list
-                const existingFiles = Array.from(fileList.children).map(item => 
-                    item.querySelector('.file-name').textContent
-                );
-                
-                // If PNG only mode is selected, only add PNG files
-                if (pngOnlyRadio.checked && !file.name.toLowerCase().endsWith('.png')) {
+                // Skip non-image files
+                if (!file.type.startsWith('image/') && !ALLOWED_EXTENSIONS.some(ext => file.name.toLowerCase().endsWith(ext))) {
                     return;
                 }
                 
-                if (!existingFiles.includes(file.name)) {
-                    // Add to DataTransfer object
-                    selectedFiles.items.add(file);
-                    
-                    const fileItem = document.createElement('div');
-                    fileItem.className = 'file-item';
-                    fileItem.innerHTML = `
-                        <span class="file-name">${file.name}</span>
-                        <span class="remove-file">×</span>
-                    `;
-                    
-                    fileItem.querySelector('.remove-file').addEventListener('click', () => {
-                        // Remove from DataTransfer object
-                        const newFiles = new DataTransfer();
-                        Array.from(selectedFiles.files).forEach(f => {
-                            if (f.name !== file.name) {
-                                newFiles.items.add(f);
-                            }
-                        });
-                        selectedFiles = newFiles;
-                        fileInput.files = selectedFiles.files;
-                        
-                        fileItem.remove();
-                        updateSubmitButton();
-                    });
-                    
-                    fileList.appendChild(fileItem);
+                // Skip non-PNG files in PNG-only mode
+                if (pngOnlyMode && !file.name.toLowerCase().endsWith('.png')) {
+                    return;
                 }
+                
+                // Generate a unique ID for each file that includes its path
+                const fileId = file.webkitRelativePath || file.name;
+                
+                // Check if file is already in the list
+                if (Array.from(selectedFiles.files).some(f => (f.webkitRelativePath || f.name) === fileId)) {
+                    return; // Skip duplicates
+                }
+                
+                // Add to DataTransfer object
+                selectedFiles.items.add(file);
+                
+                // Create file item in UI
+                const fileItem = document.createElement('div');
+                fileItem.className = 'file-item';
+                
+                // Display path for folder uploads
+                const displayName = file.webkitRelativePath || file.name;
+                
+                fileItem.innerHTML = `
+                    <span>${displayName} (${(file.size / 1024).toFixed(1)} KB)</span>
+                    <span class="remove-file">×</span>
+                `;
+                
+                // Add remove button functionality
+                const removeBtn = fileItem.querySelector('.remove-file');
+                removeBtn.addEventListener('click', () => {
+                    // Remove from DataTransfer object
+                    const newFiles = new DataTransfer();
+                    Array.from(selectedFiles.files).forEach(f => {
+                        const currentId = f.webkitRelativePath || f.name;
+                        if (currentId !== fileId) {
+                            newFiles.items.add(f);
+                        }
+                    });
+                    selectedFiles = newFiles;
+                    fileInput.files = selectedFiles.files;
+                    
+                    fileItem.remove();
+                    updateSubmitButton();
+                });
+                
+                fileList.appendChild(fileItem);
             });
             
             // Update the file input with all selected files
