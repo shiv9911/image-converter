@@ -64,7 +64,6 @@
             text-align: center;
             margin: 20px 0;
             background-color: #fafafa;
-            cursor: pointer;
             transition: border-color 0.3s ease;
         }
         .drop-zone:hover {
@@ -73,6 +72,25 @@
         .drop-zone.dragover {
             border-color: #4CAF50;
             background-color: #f0f9f0;
+        }
+        .selection-buttons {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-top: 15px;
+        }
+        .select-btn {
+            background-color: #4CAF50;
+            color: white;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s;
+        }
+        .select-btn:hover {
+            background-color: #45a049;
         }
         #fileList {
             margin-top: 20px;
@@ -197,8 +215,13 @@
             </div>
             
             <div class="drop-zone" id="dropZone">
-                <p>Drag & drop files or folders here or click to select</p>
-                <input type="file" id="fileInput" name="files[]" multiple accept=".webp,.avif,.png,.gif,.tiff,.psd,.svg,.heic,.jpg,.jpeg" webkitdirectory directory style="display: none;">
+                <p>Drag & drop files or folders here</p>
+                <div class="selection-buttons">
+                    <button type="button" class="select-btn" id="selectFilesBtn">Select Files</button>
+                    <button type="button" class="select-btn" id="selectFolderBtn">Select Folder</button>
+                </div>
+                <input type="file" id="fileInput" name="files[]" multiple accept=".webp,.avif,.png,.gif,.tiff,.psd,.svg,.heic,.jpg,.jpeg" style="display: none;">
+                <input type="file" id="folderInput" name="files[]" multiple accept=".webp,.avif,.png,.gif,.tiff,.psd,.svg,.heic,.jpg,.jpeg" webkitdirectory directory style="display: none;">
             </div>
             <div id="fileList"></div>
             <div class="error-message" id="errorMessage"></div>
@@ -221,6 +244,9 @@
         
         const dropZone = document.getElementById('dropZone');
         const fileInput = document.getElementById('fileInput');
+        const folderInput = document.getElementById('folderInput');
+        const selectFilesBtn = document.getElementById('selectFilesBtn');
+        const selectFolderBtn = document.getElementById('selectFolderBtn');
         const fileList = document.getElementById('fileList');
         const submitBtn = document.getElementById('submitBtn');
         const form = document.getElementById('uploadForm');
@@ -246,11 +272,23 @@
             handleFiles(e.dataTransfer.files);
         });
 
-        dropZone.addEventListener('click', () => {
+        // File selection button
+        selectFilesBtn.addEventListener('click', () => {
             fileInput.click();
         });
+        
+        // Folder selection button
+        selectFolderBtn.addEventListener('click', () => {
+            folderInput.click();
+        });
 
+        // Handle file input change
         fileInput.addEventListener('change', (e) => {
+            handleFiles(e.target.files);
+        });
+        
+        // Handle folder input change
+        folderInput.addEventListener('change', (e) => {
             handleFiles(e.target.files);
         });
 
@@ -352,7 +390,7 @@
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
             
-            if (fileList.children.length === 0 || !fileInput.files.length) {
+            if (fileList.children.length === 0) {
                 alert('Please select at least one file to convert.');
                 return;
             }
@@ -370,8 +408,8 @@
                 formData.append('conversionType', document.querySelector('input[name="conversionType"]:checked').value);
                 // Add sortFolders checkbox value
                 formData.append('sortFolders', document.getElementById('sortFolders').checked ? 'on' : '');
-                // Append all files
-                Array.from(fileInput.files).forEach(file => {
+                // Append all files from the selectedFiles DataTransfer object
+                Array.from(selectedFiles.files).forEach(file => {
                     formData.append('files[]', file);
                 });
 
