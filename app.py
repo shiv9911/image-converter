@@ -51,34 +51,62 @@ def convert_avif_to_jpg(input_path, output_path):
         # Fallback to just 'ffmpeg' and hope it's in PATH
         ffmpeg_path = 'ffmpeg'
     
-    print(f"Using ffmpeg path: {ffmpeg_path}")
+    print(f"[DEBUG] AVIF Conversion - Using ffmpeg path: {ffmpeg_path}")
+    print(f"[DEBUG] AVIF Conversion - Input path: {input_path}")
+    print(f"[DEBUG] AVIF Conversion - Output path: {output_path}")
     
+    # First try: Use ffmpeg directly
     try:
+        print(f"[DEBUG] AVIF Conversion - Running ffmpeg command")
         result = subprocess.run([
             ffmpeg_path, '-y', '-i', input_path, output_path
-        ], capture_output=True)
+        ], capture_output=True, text=True)
         if result.returncode == 0:
+            print(f"[DEBUG] AVIF Conversion - ffmpeg successful")
             return True
         else:
-            print(f"ffmpeg error: {result.stderr}")
+            print(f"[DEBUG] AVIF Conversion - ffmpeg error: {result.stderr}")
     except Exception as e:
-        print(f"ffmpeg exception: {e}")
+        print(f"[DEBUG] AVIF Conversion - ffmpeg exception: {e}")
+    
+    # Second try: Use Pillow with AVIF plugin
+    try:
+        print(f"[DEBUG] AVIF Conversion - Trying Pillow with AVIF plugin")
+        from PIL import Image
+        import pillow_avif
+        
+        # Open AVIF image
+        img = Image.open(input_path)
+        # Convert to RGB (remove alpha channel if present)
+        rgb_img = img.convert('RGB')
+        # Save as JPEG
+        rgb_img.save(output_path, 'JPEG', quality=95)
+        print(f"[DEBUG] AVIF Conversion - Pillow successful")
+        return True
+    except Exception as e:
+        print(f"[DEBUG] AVIF Conversion - Pillow exception: {e}")
+    
     # Fallback to API
     try:
+        print(f"[DEBUG] AVIF Conversion - Trying API fallback")
         # Read the input file
         with open(input_path, 'rb') as image_file:
             # Convert the image to base64
             base64_image = base64.b64encode(image_file.read()).decode('utf-8')
 
+        # Get API key from environment variable or use default
+        api_key = os.environ.get('CLOUDMERSIVE_API_KEY', 'YOUR-API-KEY-HERE')
+        
         # API endpoint for image conversion
         api_url = 'https://api.cloudmersive.com/image/convert/to/jpg'
         
         # API key - you'll need to sign up for a free API key at cloudmersive.com
         headers = {
             'Content-Type': 'application/json',
-            'Apikey': 'YOUR-API-KEY-HERE'  # Replace with your API key
+            'Apikey': api_key
         }
         
+        print(f"[DEBUG] AVIF Conversion - Sending API request")
         # Send request to API
         response = requests.post(
             api_url,
@@ -86,14 +114,18 @@ def convert_avif_to_jpg(input_path, output_path):
             headers=headers
         )
         
+        print(f"[DEBUG] AVIF Conversion - API response status: {response.status_code}")
         if response.status_code == 200:
             # Save the converted image
             with open(output_path, 'wb') as f:
                 f.write(response.content)
+            print(f"[DEBUG] AVIF Conversion - API successful")
             return True
+        else:
+            print(f"[DEBUG] AVIF Conversion - API error: {response.text[:200]}")
         return False
     except Exception as e:
-        print(f"Error converting image (API fallback): {str(e)}")
+        print(f"[DEBUG] AVIF Conversion - API exception: {str(e)}")
         return False
 
 @app.route('/')
