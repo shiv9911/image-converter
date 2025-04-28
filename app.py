@@ -223,7 +223,33 @@ def convert():
     folder_structure = {}
 
     try:
+        # Track all folders we've seen to preserve empty folders
+        folder_paths = set()
+        
         with zipfile.ZipFile(zip_path, 'w') as zipf:
+            # First pass: collect all folder paths
+            for file in files:
+                if file:
+                    # Extract folder structure
+                    original_path = file.filename.replace('\\', '/')
+                    dir_path = os.path.dirname(original_path)
+                    
+                    # Add this folder and all parent folders to our set
+                    current_path = ''
+                    for part in dir_path.split('/'):
+                        if part:
+                            current_path = current_path + part + '/'
+                            folder_paths.add(current_path)
+            
+            # Add all folders to the ZIP first (ensures empty folders are preserved)
+            for folder in sorted(folder_paths):
+                # Create directory entry in the ZIP
+                zipinfo = zipfile.ZipInfo(folder)
+                zipinfo.external_attr = 0o755 << 16  # Permissions for folder
+                zipf.writestr(zipinfo, '')
+                print(f"[DEBUG] Adding folder to ZIP: {folder}")
+            
+            # Second pass: process files
             for file in files:
                 if file and allowed_file(file.filename):
                     # Check if we should process this file based on conversion type
