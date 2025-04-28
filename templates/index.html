@@ -424,6 +424,13 @@
                 if (response.ok) {
                     // Download the zip file
                     downloadZip(result.filename, result.data);
+                    
+                    // Clear file selection after successful download
+                    fileList.innerHTML = '';
+                    selectedFiles = new DataTransfer();
+                    fileInput.files = selectedFiles.files;
+                    folderInput.value = '';
+                    updateSubmitButton();
                 } else {
                     throw new Error(result.error || 'Failed to convert images');
                 }
