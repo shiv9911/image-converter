@@ -188,6 +188,16 @@
             margin-top: 10px;
             display: none;
         }
+        .success-message {
+            color: #28a745;
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #d4edda;
+            border-radius: 5px;
+            display: none;
+            text-align: center;
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
@@ -225,6 +235,7 @@
             </div>
             <div id="fileList"></div>
             <div class="error-message" id="errorMessage"></div>
+            <div class="success-message" id="successMessage"></div>
             <div style="margin: 15px 0; text-align: left;">
                 <input type="checkbox" id="sortFolders" name="sortFolders">
                 <label for="sortFolders"><b>Sort images into Main/Additional folders</b></label>
@@ -254,6 +265,7 @@
         const loadingOverlay = document.getElementById('loadingOverlay');
         const progressText = document.getElementById('progressText');
         const errorMessage = document.getElementById('errorMessage');
+        const successMessage = document.getElementById('successMessage');
         let selectedFiles = new DataTransfer();
 
         // Handle drag and drop events
@@ -395,8 +407,9 @@
                 return;
             }
 
-            // Hide any previous error
+            // Hide any previous error or success messages
             errorMessage.style.display = 'none';
+            successMessage.style.display = 'none';
             
             // Show loading overlay
             loadingOverlay.style.display = 'flex';
@@ -422,6 +435,10 @@
                 const result = await response.json();
 
                 if (response.ok) {
+                    // Show success message
+                    successMessage.textContent = "Images converted successfully! Download starting...";
+                    successMessage.style.display = "block";
+                    
                     // Download the zip file
                     if (result.large_file) {
                         // For large files, redirect to the download URL
@@ -437,6 +454,11 @@
                     fileInput.files = selectedFiles.files;
                     folderInput.value = '';
                     updateSubmitButton();
+                    
+                    // Hide success message after 5 seconds
+                    setTimeout(() => {
+                        successMessage.style.display = "none";
+                    }, 5000);
                 } else {
                     throw new Error(result.error || 'Failed to convert images');
                 }
