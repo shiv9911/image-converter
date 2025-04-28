@@ -423,7 +423,13 @@
 
                 if (response.ok) {
                     // Download the zip file
-                    downloadZip(result.filename, result.data);
+                    if (result.large_file) {
+                        // For large files, redirect to the download URL
+                        window.location.href = result.download_url;
+                    } else {
+                        // For smaller files, use base64 data
+                        downloadZip(result.filename, result.data);
+                    }
                     
                     // Clear file selection after successful download
                     fileList.innerHTML = '';

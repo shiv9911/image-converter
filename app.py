@@ -15,8 +15,9 @@ import requests
 import json
 
 app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 32 * 1024 * 1024  # 32MB max file size
+app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB max file size
 app.config['UPLOAD_FOLDER'] = 'uploads'
+app.config['MAX_FILES_PER_BATCH'] = 50  # Process files in batches of 50
 
 # Ensure upload folder exists
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -205,11 +206,21 @@ def convert():
     if not files or files[0].filename == '':
         return jsonify({'error': 'No files selected'}), 400
     
-    # Get conversion type
     conversion_type = request.form.get('conversionType', 'allToJpg')
-    sort_folders = request.form.get('sortFolders') == 'on'
-    print(f"[DEBUG] sortFolders enabled: {sort_folders}")
-
+    sort_folders = request.form.get('sortFolders', '') == 'on'
+    
+    # Count total valid files for processing
+    valid_files = [f for f in files if f and allowed_file(f.filename)]
+    total_files = len(valid_files)
+    
+    if total_files == 0:
+        return jsonify({'error': 'No valid image files found'}), 400
+        
+    # If we have a large number of files, process in batches
+    max_files_per_batch = app.config['MAX_FILES_PER_BATCH']
+    if total_files > max_files_per_batch:
+        print(f"[DEBUG] Processing {total_files} files in batches of {max_files_per_batch}")
+    
     # Create a timestamp for this batch
     import datetime
     now = datetime.datetime.now()
@@ -249,115 +260,150 @@ def convert():
                 zipf.writestr(zipinfo, '')
                 print(f"[DEBUG] Adding folder to ZIP: {folder}")
             
-            # Second pass: process files
-            for file in files:
-                if file and allowed_file(file.filename):
-                    # Check if we should process this file based on conversion type
-                    if conversion_type == 'pngToJpg' and not file.filename.lower().endswith('.png'):
-                        continue
-                    
-                    # Extract folder structure and filename
-                    original_path = file.filename
-                    # Replace backslashes with forward slashes for consistency
-                    original_path = original_path.replace('\\', '/')
-                    
-                    # Get the directory path and filename
-                    dir_path = os.path.dirname(original_path)
-                    just_filename = os.path.basename(original_path)
-                    
-                    # Generate unique filenames for processing
-                    base_filename, ext = os.path.splitext(secure_filename(just_filename))
-                    ext = ext.lower()
-                    input_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{base_filename}_{timestamp}_input{ext}")
-                    output_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{base_filename}_{timestamp}_output.jpg")
-                    
-                    # Determine the ZIP path (preserving folder structure)
-                    if sort_folders:
-                        # Main/Additional sorting takes precedence if enabled
-                        if '-' in base_filename and base_filename.split('-')[-1].isdigit():
-                            zip_subfolder = 'Additional/'
-                        else:
-                            zip_subfolder = 'Main/'
-                            
-                        # If there was an original folder path, append it after Main/Additional
-                        if dir_path:
-                            zip_path_in_archive = os.path.join(zip_subfolder, dir_path)
-                        else:
-                            zip_path_in_archive = zip_subfolder
-                    else:
-                        # Just use the original folder structure
-                        zip_path_in_archive = dir_path
-                    
-                    # Ensure the path ends with a slash if not empty
-                    if zip_path_in_archive and not zip_path_in_archive.endswith('/'):
-                        zip_path_in_archive += '/'
+            # Process files in batches if needed
+            batch_size = app.config['MAX_FILES_PER_BATCH']
+            for i in range(0, len(files), batch_size):
+                batch = files[i:i+batch_size]
+                print(f"[DEBUG] Processing batch {i//batch_size + 1} of {(len(files) + batch_size - 1)//batch_size}")
+                
+                # Second pass: process files in this batch
+                for file in batch:
+                    if file and allowed_file(file.filename):
+                        # Check if we should process this file based on conversion type
+                        if conversion_type == 'pngToJpg' and not file.filename.lower().endswith('.png'):
+                            continue
                         
-                    print(f"[DEBUG] File: {file.filename}, zip_path: {zip_path_in_archive}")
-                    
-                    try:
-                        # Save the uploaded file
-                        file.save(input_path)
+                        # Extract folder structure and filename
+                        original_path = file.filename
+                        # Replace backslashes with forward slashes for consistency
+                        original_path = original_path.replace('\\', '/')
                         
-                        if ext == '.jpg':
-                            # If already JPG, add as-is with original name
-                            output_filename = just_filename
-                            print(f"[DEBUG] Adding to ZIP: {zip_path_in_archive + output_filename}")
-                            zipf.write(input_path, zip_path_in_archive + output_filename)
-                        else:
-                            # Convert to JPG
-                            converted = False
-                            if ext == '.avif':
-                                # AVIF special handling
-                                success = convert_avif_to_jpg(input_path, output_path)
-                                if success:
-                                    converted = True
-                                else:
-                                    # If AVIF conversion fails, skip
-                                    print(f"Failed to convert AVIF: {file.filename}")
-                                    continue
+                        # Get the directory path and filename
+                        dir_path = os.path.dirname(original_path)
+                        just_filename = os.path.basename(original_path)
+                        
+                        # Generate unique filenames for processing
+                        base_filename, ext = os.path.splitext(secure_filename(just_filename))
+                        ext = ext.lower()
+                        input_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{base_filename}_{timestamp}_input{ext}")
+                        output_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{base_filename}_{timestamp}_output.jpg")
+                        
+                        # Determine the ZIP path (preserving folder structure)
+                        if sort_folders:
+                            # Main/Additional sorting takes precedence if enabled
+                            if '-' in base_filename and base_filename.split('-')[-1].isdigit():
+                                zip_subfolder = 'Additional/'
                             else:
-                                # Use Pillow for all other formats
-                                try:
-                                    from PIL import Image
-                                    im = Image.open(input_path)
-                                    rgb_im = im.convert('RGB')
-                                    rgb_im.save(output_path, 'JPEG', quality=95)
-                                    converted = True
-                                except Exception as e:
-                                    print(f"Error converting {file.filename}: {e}")
-                                    continue  # Skip this file if conversion fails
-                                    
-                            # Add converted file with .jpg extension
-                            if converted:
-                                output_filename = f"{base_filename}.jpg"
-                                print(f"[DEBUG] Adding to ZIP: {zip_path_in_archive + output_filename}")
-                                zipf.write(output_path, zip_path_in_archive + output_filename)
+                                zip_subfolder = 'Main/'
+                                
+                            # If there was an original folder path, append it after Main/Additional
+                            if dir_path:
+                                zip_path_in_archive = os.path.join(zip_subfolder, dir_path)
+                            else:
+                                zip_path_in_archive = zip_subfolder
+                        else:
+                            # Just use the original folder structure
+                            zip_path_in_archive = dir_path
                         
-                    finally:
-                        # Clean up individual files
-                        safe_remove(input_path)
-                        safe_remove(output_path)
+                        # Ensure the path ends with a slash if not empty
+                        if zip_path_in_archive and not zip_path_in_archive.endswith('/'):
+                            zip_path_in_archive += '/'
+                            
+                        print(f"[DEBUG] File: {file.filename}, zip_path: {zip_path_in_archive}")
+                        
+                        try:
+                            # Save the uploaded file
+                            file.save(input_path)
+                            
+                            if ext == '.jpg':
+                                # If already JPG, add as-is with original name
+                                output_filename = just_filename
+                                print(f"[DEBUG] Adding to ZIP: {zip_path_in_archive + output_filename}")
+                                zipf.write(input_path, zip_path_in_archive + output_filename)
+                            else:
+                                # Convert to JPG
+                                converted = False
+                                if ext == '.avif':
+                                    # AVIF special handling
+                                    success = convert_avif_to_jpg(input_path, output_path)
+                                    if success:
+                                        converted = True
+                                    else:
+                                        # If AVIF conversion fails, skip
+                                        print(f"Failed to convert AVIF: {file.filename}")
+                                        continue
+                                else:
+                                    # Use Pillow for all other formats
+                                    try:
+                                        from PIL import Image
+                                        im = Image.open(input_path)
+                                        rgb_im = im.convert('RGB')
+                                        rgb_im.save(output_path, 'JPEG', quality=95)
+                                        converted = True
+                                    except Exception as e:
+                                        print(f"Error converting {file.filename}: {e}")
+                                        continue  # Skip this file if conversion fails
+                                        
+                                # Add converted file with .jpg extension
+                                if converted:
+                                    output_filename = f"{base_filename}.jpg"
+                                    print(f"[DEBUG] Adding to ZIP: {zip_path_in_archive + output_filename}")
+                                    zipf.write(output_path, zip_path_in_archive + output_filename)
+                        
+                        finally:
+                            # Clean up individual files
+                            safe_remove(input_path)
+                            safe_remove(output_path)
         
-        # Read the zip file into memory
-        with open(zip_path, 'rb') as f:
-            zip_data = f.read()
+        # Read the zip file into memory in chunks to avoid memory issues
+        zip_size = os.path.getsize(zip_path)
+        print(f"[DEBUG] ZIP file size: {zip_size} bytes")
         
-        # Clean up the zip file
-        safe_remove(zip_path)
-        
-        # Convert zip data to base64 for JSON response
-        zip_base64 = base64.b64encode(zip_data).decode('utf-8')
-        
-        return jsonify({
-            'success': True,
-            'filename': 'converted_images.zip',
-            'data': zip_base64
-        })
+        # For very large files, return a direct download link instead of base64
+        if zip_size > 50 * 1024 * 1024:  # If ZIP is larger than 50MB
+            # Generate a unique filename
+            timestamp = int(time.time())
+            download_filename = f"converted_images_{timestamp}.zip"
+            download_path = os.path.join(app.config['UPLOAD_FOLDER'], download_filename)
+            
+            # Move the zip to a downloadable location
+            import shutil
+            shutil.move(zip_path, download_path)
+            
+            # Return a download link instead of base64 data
+            download_url = f"/download/{download_filename}"
+            return jsonify({
+                'success': True,
+                'filename': 'converted_images.zip',
+                'large_file': True,
+                'download_url': download_url
+            })
+        else:
+            # For smaller files, use the base64 approach
+            with open(zip_path, 'rb') as f:
+                zip_data = f.read()
+            
+            # Clean up the zip file
+            safe_remove(zip_path)
+            
+            # Convert zip data to base64 for JSON response
+            zip_base64 = base64.b64encode(zip_data).decode('utf-8')
+            
+            return jsonify({
+                'success': True,
+                'filename': 'converted_images.zip',
+                'data': zip_base64
+            })
         
     except Exception as e:
         # Clean up in case of error
         safe_remove(zip_path)
         return jsonify({'error': str(e)}), 400
+
+@app.route('/download/<filename>')
+def download(filename):
+    path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    return send_file(path, as_attachment=True)
 
 if __name__ == '__main__':
     app.run(debug=True)
